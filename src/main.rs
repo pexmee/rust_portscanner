@@ -9,13 +9,8 @@ Main should only take the arguments from the user and pass them to the functions
 fn main() {
     use terminal_menu::{button, label, menu, mut_menu, run, string};
     let proto_menu = menu(vec![
-        // label:
-        //  not selectable, useful as a title, separator, etc...
         label("----------------------"),
         label("Select transport protocol"),
-        label("use wasd or arrow keys"),
-        label("enter to select"),
-        label("'q' or esc to exit"),
         label("-----------------------"),
         button("TCP"),
         button("UDP"),
@@ -26,15 +21,10 @@ fn main() {
     let proto = mm.selected_item_name();
     println!("Selected: {}", proto);
     let port_menu = menu(vec![
-        // label:
-        //  not selectable, useful as a title, separator, etc...
         label("----------------------"),
         label("Enter the port range (e.g 222-1337)"),
-        label("use wasd or arrow keys"),
-        label("enter to select"),
-        label("'q' or esc to exit"),
         label("-----------------------"),
-        string("ports", "1-65535", true),
+        string("Ports", "1-65535", true),
         button("Confirm"),
     ]);
     run(&port_menu);
@@ -42,7 +32,7 @@ fn main() {
         println!("Does not support UDP yet.")
     }
     let mm = mut_menu(&port_menu);
-    println!("Ports: {}", mm.selection_value("ports"));
+    println!("Ports: {}", mm.selection_value("Ports"));
 
     // for i in 1..7 as u32{
 
