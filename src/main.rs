@@ -1,19 +1,22 @@
-use std::vec;
+use std::{default, vec};
 // use eyre;
 use inquire::{validator::Validation, Select, Text};
 use regex::Regex;
+use scanner::scanner::{Scan, Scanner};
 /*
 This should first be implemented as a TCP portscanner, and then with support to use UDP portscan.
 Main should only take the arguments from the user and pass them to the functions.
 inquire
 */
 mod networking;
-use networking::portstate::{PortState, State};
+mod scanner;
 fn main() {
     let validator = |input: &str| {
         let ip_pattern = Regex::new(r"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$").unwrap();
         if input.is_empty() {
-            Ok(Validation::Invalid("You need to enter an IP address".into()))
+            Ok(Validation::Invalid(
+                "You need to enter an IP address".into(),
+            ))
         } else if input == "localhost" {
             Ok(Validation::Valid)
         } else if ip_pattern.is_match(input) {
@@ -28,19 +31,19 @@ fn main() {
         .unwrap();
 
     let options = vec!["TCP", "UDP", "TCP & UDP"];
-    let ans = Select::new("Select transport protocol", options)
+    let proto = Select::new("Select transport protocol", options)
         .prompt()
         .unwrap();
 
-    let validator = |hostname: &str| {
+    let validator = |port_range: &str| {
         let port_range_pattern = Regex::new(r"\d+[-]\d+").unwrap();
-        if hostname.chars().count() > 11 {
+        if port_range.chars().count() > 11 {
             Ok(Validation::Invalid(
                 "You're only allowed 11 characters.".into(),
             ))
-        } else if port_range_pattern.is_match(hostname) {
+        } else if port_range_pattern.is_match(port_range) {
             Ok(Validation::Valid)
-        } else if hostname.is_empty() {
+        } else if port_range.is_empty() {
             Ok(Validation::Valid)
         } else {
             Ok(Validation::Invalid("Invalid port range.".into()))
@@ -51,23 +54,28 @@ fn main() {
         .prompt()
         .unwrap();
 
-    if port_range.is_empty() {
-        let _port_range = "1-65535";
-    }
-    let mut portstate = PortState{..Default::default()};
-    if ans == "TCP" {
-        let result = networking::tcp::tcp_connect(&hostname, 21);
-        match result {
-            Ok(_) => {
-                portstate.open();
-            },
-            Err(_) => {
-                portstate.closed();
-            },
-        }
-    }
+    let mut scanner = Scanner {
+        hostname: &hostname,
+        proto: &proto,
+        port_range_str: &port_range,
+        ..Default::default()
+    };
+    scanner.get_port_range();
+    println!("{:?}", scanner.port_range)
+    // let mut portstate = PortState{..Default::default()};
+    // if ans == "TCP" {
+    //     let result = networking::tcp::tcp_connect(&hostname, 21);
+    //     match result {
+    //         Ok(_) => {
+    //             portstate.open();
+    //         },
+    //         Err(_) => {
+    //             portstate.closed();
+    //         },
+    //     }
+    // }
 
-    println!("{}", portstate.is_open());
+    // println!("{}", portstate.is_open());
     // // for i in 1..7 as u32{
 
     // // }
