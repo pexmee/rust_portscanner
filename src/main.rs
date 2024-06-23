@@ -1,68 +1,71 @@
-// use std::net::TcpStream;
-// use std::io::prelude::*;
 use std::vec;
-
+// use eyre;
+use inquire::{validator::Validation, Select, Text};
+use regex::Regex;
 /*
 This should first be implemented as a TCP portscanner, and then with support to use UDP portscan.
 Main should only take the arguments from the user and pass them to the functions.
+inquire
 */
+mod networking;
 fn main() {
-    use terminal_menu::{button, label, menu, mut_menu, run, string};
-    let proto_menu = menu(vec![
-        label("----------------------"),
-        label("Select transport protocol"),
-        label("-----------------------"),
-        button("TCP"),
-        button("UDP"),
-        button("TCP & UDP"),
-    ]);
-    run(&proto_menu);
-    let mm = mut_menu(&proto_menu);
-    let proto = mm.selected_item_name();
-    println!("Selected: {}", proto);
-    let port_menu = menu(vec![
-        label("----------------------"),
-        label("Enter the port range (e.g 222-1337)"),
-        label("-----------------------"),
-        string("Ports", "1-65535", true),
-        button("Confirm"),
-    ]);
-    run(&port_menu);
-    if proto == "UDP" || proto == "TCP & UDP" {
-        println!("Does not support UDP yet.")
+    let validator = |input: &str| {
+        let ip_pattern = Regex::new(r"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$").unwrap();
+        if input.is_empty() {
+            Ok(Validation::Invalid("You need to enter an IP address".into()))
+        } else if input == "localhost" {
+            Ok(Validation::Valid)
+        } else if ip_pattern.is_match(input) {
+            Ok(Validation::Valid)
+        } else {
+            Ok(Validation::Invalid("Invalid host".into()))
+        }
+    };
+    let hostname = Text::new("Enter the hostname: (e.g 127.0.0.1, localhost, 123.123.123.123)")
+        .with_validator(validator)
+        .prompt()
+        .unwrap();
+
+    let options = vec!["TCP", "UDP", "TCP & UDP"];
+    let ans = Select::new("Select transport protocol", options)
+        .prompt()
+        .unwrap();
+
+    let validator = |hostname: &str| {
+        let port_range_pattern = Regex::new(r"\d+[-]\d+").unwrap();
+        if hostname.chars().count() > 11 {
+            Ok(Validation::Invalid(
+                "You're only allowed 11 characters.".into(),
+            ))
+        } else if port_range_pattern.is_match(hostname) {
+            Ok(Validation::Valid)
+        } else if hostname.is_empty() {
+            Ok(Validation::Valid)
+        } else {
+            Ok(Validation::Invalid("Invalid port range.".into()))
+        }
+    };
+    let port_range = Text::new("Enter the port range (e.g 123-1337, default 1-65535)")
+        .with_validator(validator)
+        .prompt()
+        .unwrap();
+
+    if port_range.is_empty() {
+        let _port_range = "1-65535";
     }
-    let mm = mut_menu(&port_menu);
-    println!("Ports: {}", mm.selection_value("Ports"));
+    if ans == "TCP" {
+        let result = networking::tcp_client::tcp_client(&hostname, 21);
+        match result {
+            Ok(v) => v,
+            Err(e) => panic!("Error from tcp client {e}")
+        }
+    }
 
-    // for i in 1..7 as u32{
+    // // for i in 1..7 as u32{
 
-    // }
-
-    // let mut stream: TcpStream = match TcpStream::connect("217.160.94.169:21"){
-    //     Ok(v) => v,
-    //     Err(e) => panic!("Could not connect {e}"),
-    // };
-    // let mut buf:[u8; 1024] = [0;1024];
-
-    // let res: usize = match stream.peek(&mut buf){
-    //     Ok(v) => v,
-    //     Err(e) => panic!("Could not peek {e}"),
-    // };
-    // println!("peek length: {res}");
-
-    // let mut buf = [0;1024];
-    // let len: usize = match stream.read(&mut buf){
-    //     Ok(v) => v,
-    //     Err(e) => panic!("Could not read {e}"),
-    // };
-    // println!("length: {len}");
-
-    // let s: &str = match str::from_utf8(&buf){
-    //     Ok(v) => v,
-    //     Err(e) => panic!("Invalid UTF-8 Sequence {e}"),
-    // };
+    // // }
 
     // println!("{}", s);
-
-    // Ok(())
+    // eyre::bail!("bajs");
+    // Ok(());
 }
