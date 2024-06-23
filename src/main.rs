@@ -8,6 +8,7 @@ Main should only take the arguments from the user and pass them to the functions
 inquire
 */
 mod networking;
+use networking::portstate::{PortState, State};
 fn main() {
     let validator = |input: &str| {
         let ip_pattern = Regex::new(r"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$").unwrap();
@@ -53,14 +54,20 @@ fn main() {
     if port_range.is_empty() {
         let _port_range = "1-65535";
     }
+    let mut portstate = PortState{..Default::default()};
     if ans == "TCP" {
-        let result = networking::tcp_client::tcp_client(&hostname, 21);
+        let result = networking::tcp::tcp_connect(&hostname, 21);
         match result {
-            Ok(v) => v,
-            Err(e) => panic!("Error from tcp client {e}")
+            Ok(_) => {
+                portstate.open();
+            },
+            Err(_) => {
+                portstate.closed();
+            },
         }
     }
 
+    println!("{}", portstate.is_open());
     // // for i in 1..7 as u32{
 
     // // }
