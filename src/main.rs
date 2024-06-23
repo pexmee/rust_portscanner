@@ -2,7 +2,7 @@ use std::{default, vec};
 // use eyre;
 use inquire::{validator::Validation, Select, Text};
 use regex::Regex;
-use scanner::scanner::{Scan, Scanner};
+use scanner::scanner::{create_scanner, Scan, Scanner};
 /*
 This should first be implemented as a TCP portscanner, and then with support to use UDP portscan.
 Main should only take the arguments from the user and pass them to the functions.
@@ -54,14 +54,7 @@ fn main() {
         .prompt()
         .unwrap();
 
-    let mut scanner = Scanner {
-        hostname: &hostname,
-        proto: &proto,
-        port_range_str: &port_range,
-        ..Default::default()
-    };
-    scanner.get_port_range();
-    println!("{:?}", scanner.port_range)
+    let mut scanner = create_scanner(&hostname, &proto, &port_range);
     // let mut portstate = PortState{..Default::default()};
     // if ans == "TCP" {
     //     let result = networking::tcp::tcp_connect(&hostname, 21);
