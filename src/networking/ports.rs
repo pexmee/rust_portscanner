@@ -1,11 +1,12 @@
 
 
-
+#[derive(Clone)]
 pub struct Port{
     pub port: u16,
     open: bool,
     seen: bool,
 }
+
 
 pub fn create_port(port: u16) -> Port {
     Port{

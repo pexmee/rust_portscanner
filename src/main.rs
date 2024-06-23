@@ -55,6 +55,7 @@ fn main() {
         .unwrap();
 
     let mut scanner = create_scanner(&hostname, &proto, &port_range);
+    scanner.scan();
     // let mut portstate = PortState{..Default::default()};
     // if ans == "TCP" {
     //     let result = networking::tcp::tcp_connect(&hostname, 21);
