@@ -106,6 +106,9 @@ impl<'t> Scan for Scanner<'t> {
     }
     fn scan(&mut self) {
         // here we gotta do some multithreading bs to scan ports in different segments
+        if !self.target_alive(false){
+            return // do some result handling here instead
+        }
         for port in self.ports.iter_mut() {
             if !port.seen() {
                 let scan_result = tcp_connect(self.hostname, port.port);
