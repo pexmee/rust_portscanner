@@ -1,21 +1,36 @@
-
-
 #[derive(Clone)]
-pub struct Port{
-    pub port: u16,
+pub struct Port {
+    pub value: u16,
     open: bool,
     seen: bool,
 }
 
 
-pub fn create_port(port: u16) -> Port {
-    Port{
-        port: port,
-        open: false,
-        seen: false
+impl Into<u16> for Port {
+    fn into(self) -> u16 {
+        self.value
+    }
+}
+impl From<u16> for Port {
+    fn from(port: u16) -> Self {
+        Port {
+            value: port,
+            open: false,
+            seen: false,
+        }
+    }
+}
+impl From<&mut Port> for u16 {
+    fn from(port: &mut Port) -> Self {
+        port.value
     }
 }
 
+impl From<&Port> for u16 {
+    fn from(port: &Port) -> Self {
+        port.value
+    }   
+}
 pub trait State {
     fn is_open(&self) -> bool;
     fn is_closed(&self) -> bool;
@@ -24,11 +39,11 @@ pub trait State {
     fn seen(&self) -> bool;
     fn see(&mut self);
 }
-impl State for Port{
-    fn is_open(&self) -> bool{
+impl State for Port {
+    fn is_open(&self) -> bool {
         self.open == true
     }
-    fn is_closed(&self) -> bool{
+    fn is_closed(&self) -> bool {
         self.open == false
     }
     fn open(&mut self) {
@@ -40,7 +55,7 @@ impl State for Port{
     fn seen(&self) -> bool {
         self.seen
     }
-    fn see(&mut self){
+    fn see(&mut self) {
         self.seen = true
     }
 }

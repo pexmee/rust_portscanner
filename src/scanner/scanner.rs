@@ -1,14 +1,11 @@
-use std::net::Ipv6Addr;
 use std::str;
-use std::time::Duration;
-use std::vec;
 
 use crate::networking::ports::State;
-use crate::networking::ports::{create_port, Port};
+use crate::networking::ports::Port;
 use crate::networking::tcp::tcp_connect;
-use ping::ping;
+// use ping::ping;
 use rand::seq::SliceRandom;
-use std::net::{IpAddr, Ipv4Addr};
+// use std::net::{IpAddr, Ipv4Addr};
 #[derive(Default)]
 pub struct Scanner<'t> {
     hostname: &'t str,
@@ -40,7 +37,7 @@ pub fn create_scanner<'t>(
         end_port = port_range[1].parse().unwrap();
     }
     for port in start_port..end_port as u16 {
-        scanner.ports.push(create_port(port));
+        scanner.ports.push(Port::from(port));
     }
     // debug stuff
     // for port in scanner.ports.iter(){
@@ -56,12 +53,12 @@ fn is_alive(hostname: &str, port: u16) -> bool {
     }
 }
 pub trait Scan {
-    fn target_alive(&self, seen_ports: bool) -> bool;
+    fn target_alive(&mut self, seen_ports: bool) -> bool;
     fn scan(&mut self);
 }
 
 impl<'t> Scan for Scanner<'t> {
-    fn target_alive(&self, seen_ports: bool) -> bool {
+    fn target_alive(&mut self, seen_ports: bool) -> bool {
         /*
         Responsible for checking if the target is still up and running.
         It checks random seen ports again to see if the target responds.
@@ -76,47 +73,64 @@ impl<'t> Scan for Scanner<'t> {
         If we do have seen ports, it should continue as normal, i.e read the description.
         */
         if !seen_ports {
-            let addr = self.hostname.parse::<Ipv4Addr>().unwrap();
-            let ipaddr = IpAddr::V4(addr);
-            let ping = ping(ipaddr, None, None, None, None, None);
-            match ping{
-                Ok(_) => {
-                    return true;
-                },
-                Err(_) => (),
-            }
-            // check known ports
-        }
-
-        let mut count = 0;
-        let mut ports = self.ports.to_vec();
-        ports.shuffle(&mut rand::thread_rng());
-        for port in ports.iter() {
-            if count >= 3 {
-                return false;
-            }
-            if port.seen() {
-                if is_alive(&self.hostname, port.port) {
+            // Do we really need icmp?
+            // let addr = self.hostname.parse::<Ipv4Addr>().unwrap();
+            // let ipaddr = IpAddr::V4(addr);
+            // let ping = ping(ipaddr, None, None, None, None, None);
+            // match ping {
+            //     Ok(_) => {
+            //         return true;
+            //     }
+            //     Err(_) => (),
+            // }
+            println!("running initial sweep");
+            for port in self.ports.iter_mut() {
+                println!("scanning port: {}", port.value);
+                if is_alive(&self.hostname, port.into()) {
+                    port.see();
+                    port.open();
                     return true;
                 }
-                count += 1;
             }
         }
+        // check known ports
+        else {
+            println!("running sweep");
+            let mut count = 0;
+            let mut ports = self.ports.to_vec();
+            ports.shuffle(&mut rand::thread_rng());
+            for port in ports.iter() {
+                println!("scanning port: {}", port.value);
+                if count >= 3 {
+                    return false;
+                }
+                if port.seen() {
+                    if is_alive(&self.hostname, port.into()) {
+                        return true;
+                    }
+                    count += 1;
+                }
+            }
+        }
+
         false
     }
     fn scan(&mut self) {
         // here we gotta do some multithreading bs to scan ports in different segments
-        if !self.target_alive(false){
-            return // do some result handling here instead
+        if !self.target_alive(false) {
+            return; // do some result handling here instead
         }
+        println!("target alive");
         for port in self.ports.iter_mut() {
             if !port.seen() {
-                let scan_result = tcp_connect(self.hostname, port.port);
+                let scan_result = tcp_connect(self.hostname, port.value);
                 match scan_result {
                     Ok(_) => {
                         port.open();
+                        println!("port:{}, open:{}", port.value, port.is_open());
                     }
                     Err(_) => {
+                        println!("port:{}, open:{}", port.value, port.is_open());
                         port.closed(); // This should technically not do anything as it defaults to closed anyway
                     }
                 }

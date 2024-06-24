@@ -1,8 +1,9 @@
-use std::{default, vec};
+use std::{vec};
 // use eyre;
+
 use inquire::{validator::Validation, Select, Text};
 use regex::Regex;
-use scanner::scanner::{create_scanner, Scan, Scanner};
+use scanner::scanner::{create_scanner, Scan};
 /*
 This should first be implemented as a TCP portscanner, and then with support to use UDP portscan.
 Main should only take the arguments from the user and pass them to the functions.
