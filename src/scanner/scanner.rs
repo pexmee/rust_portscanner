@@ -1,12 +1,14 @@
+use std::net::Ipv4Addr;
 use std::str;
-
+// clippy
 use crate::networking::ports::State;
 use crate::networking::ports::Port;
 use crate::networking::tcp::tcp_connect;
+use crate::networking::tcp::ConnectonState;
 // use ping::ping;
 use rand::seq::SliceRandom;
 // use std::net::{IpAddr, Ipv4Addr};
-#[derive(Default)]
+// #[derive(Default)]
 pub struct Scanner<'t> {
     hostname: &'t str,
     proto: &'t str,
@@ -54,7 +56,7 @@ fn is_alive(hostname: &str, port: u16) -> bool {
 }
 pub trait Scan {
     fn target_alive(&mut self, seen_ports: bool) -> bool;
-    fn scan(&mut self);
+    fn scan(&mut self) -> eyre::Result<()>;
 }
 
 impl<'t> Scan for Scanner<'t> {
@@ -101,7 +103,7 @@ impl<'t> Scan for Scanner<'t> {
             ports.shuffle(&mut rand::thread_rng());
             for port in ports.iter() {
                 println!("scanning port: {}", port.value);
-                if count >= 3 {
+                if count >= ports.len() / 4 {
                     return false;
                 }
                 if port.seen() {
@@ -115,27 +117,28 @@ impl<'t> Scan for Scanner<'t> {
 
         false
     }
-    fn scan(&mut self) {
+    fn scan(&mut self) -> eyre::Result<()> {
         // here we gotta do some multithreading bs to scan ports in different segments
         if !self.target_alive(false) {
-            return; // do some result handling here instead
+            return Ok(()); 
         }
         println!("target alive");
         for port in self.ports.iter_mut() {
             if !port.seen() {
-                let scan_result = tcp_connect(self.hostname, port.value);
+                port.see();
+                let scan_result = tcp_connect(self.hostname, port.value)?;
                 match scan_result {
-                    Ok(_) => {
+                    ConnectonState::Open() => {
                         port.open();
                         println!("port:{}, open:{}", port.value, port.is_open());
                     }
-                    Err(_) => {
+                    ConnectonState::Closed() => {
                         println!("port:{}, open:{}", port.value, port.is_open());
-                        port.closed(); // This should technically not do anything as it defaults to closed anyway
+
                     }
                 }
-                port.see();
             }
         }
+        Ok(())
     }
 }
