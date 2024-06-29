@@ -1,29 +1,18 @@
-// use std::io::{prelude::*};
 use eyre;
 use log::debug;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str;
-use std::time::Duration;
-use std::net::TcpStream;
+use crate::networking::tcp::ConnectionError;
+use crate::networking::tcp::ConnectonState;
+use tokio::net::TcpStream;
 use super::ports::Port;
-pub enum ConnectonState {
-    Open(),
-    Closed(),
-}
-#[derive(Debug)]
-pub enum ConnectionError {
-    ConnectionError(),
-    ConnectionTimeout(),
-}
 
-
-pub fn tcp_connect<'a>(host: &'a str, port: &Port) -> eyre::Result<ConnectonState, ConnectionError> {
+pub async fn tcp_connect_async<'a>(host: &'a str, port: &Port) -> eyre::Result<ConnectonState, ConnectionError>{
     let ip = host.parse::<Ipv4Addr>().unwrap();
     let addr = SocketAddr::new(IpAddr::V4(ip), port.into());
-    let port_result = TcpStream::connect_timeout(&addr, Duration::new(0, 1_000_000_000));
-    match port_result {
-        // Using list comprehension if we want to add errors
+    let port_result = TcpStream::connect(addr).await;
+    match port_result{
         Err(ref e) if [ErrorKind::PermissionDenied, ErrorKind::NotFound, ErrorKind::NotConnected].contains(&e.kind()) => {
             debug!("port: {} returned err: {}", port.value, e);
             Err(ConnectionError::ConnectionError())
