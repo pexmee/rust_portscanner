@@ -1,65 +1,40 @@
 // use std::io::{prelude::*};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::net::TcpStream;
-use std::time::Duration;
-use eyre::{self, bail};
-use std::str;
+use eyre;
+use log::debug;
 use std::io::ErrorKind;
+use std::net::TcpStream;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::str;
+use std::time::Duration;
+
+use super::ports::Port;
 pub enum ConnectonState {
     Open(),
     Closed(),
 }
-pub fn tcp_connect(host: &str, port: u16) -> eyre::Result<ConnectonState>{
+#[derive(Debug)]
+pub enum ConnectionError {
+    ConnectionError(),
+    ConnectionTimeout(),
+}
+
+pub fn tcp_connect<'a>(host: &'a str, port: &Port) -> eyre::Result<ConnectonState, ConnectionError> {
     let ip = host.parse::<Ipv4Addr>().unwrap();
-    let addr = SocketAddr::new(IpAddr::V4(ip), port);
-    // TcpStream::connect(format!("{host}:{port}"))?;
+    let addr = SocketAddr::new(IpAddr::V4(ip), port.into());
     let port_result = TcpStream::connect_timeout(&addr, Duration::new(0, 1_000_000_000));
-    match port_result{
-        Err(ref e) if [ErrorKind::PermissionDenied].contains(&e.kind()) => {
-            bail!("Permission denied")
-        },
-        Ok(_) =>{
-            Ok(ConnectonState::Open())
-        },
-        Err(_) => {
-            Ok(ConnectonState::Closed())
-        },
+    match port_result {
+        // Using list comprehension if we want to add errors
+        Err(ref e) if [ErrorKind::PermissionDenied, ErrorKind::NotFound, ErrorKind::NotConnected].contains(&e.kind()) => {
+            debug!("port: {} returned err: {}", port.value, e);
+            Err(ConnectionError::ConnectionError())
+        }
+        Err(ref e) if e.kind() == ErrorKind::TimedOut => {
+            Err(ConnectionError::ConnectionTimeout())
+        }
+        Err(ref e) => {
+            debug!("port: {} returned err: {}", port.value, e);
+            Ok(ConnectonState::Closed())},
+
+        Ok(_) => Ok(ConnectonState::Open()),
     }
 }
-
-// {
-//     let port_result = todo!();
-//     match port_result {
-//         ConnectonStat::Open(port, addr) => {
-
-//         },
-//         ConnectonStat::Closed() => {
-
-//         }
-//         Err(),
-//     }
-// }
-/*
-Open a TCP connection to 127.0.0.1:8080:
-
-use std::net::TcpStream;
-
-if let Ok(stream) = TcpStream::connect("127.0.0.1:8080") {
-    println!("Connected to the server!");
-} else {
-    println!("Couldn't connect to server...");
-}
-Open a TCP connection to 127.0.0.1:8080. If the connection fails, open a TCP connection to 127.0.0.1:8081:
-
-use std::net::{SocketAddr, TcpStream};
-
-let addrs = [
-    SocketAddr::from(([127, 0, 0, 1], 8080)),
-    SocketAddr::from(([127, 0, 0, 1], 8081)),
-];
-if let Ok(stream) = TcpStream::connect(&addrs[..]) {
-    println!("Connected to the server!");
-} else {
-    println!("Couldn't connect to server...");
-}
-*/
