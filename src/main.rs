@@ -2,7 +2,7 @@ use std::vec;
 // use eyre;
 
 use inquire::{validator::Validation, Select, Text};
-use log::warn;
+use log::{info, warn};
 use networking::ports::port_parser;
 use regex::Regex;
 use scanner::scanner::{create_scanner, Scan};
@@ -13,8 +13,8 @@ inquire
 */
 mod networking;
 mod scanner;
-
-fn main() {
+#[tokio::main]
+pub async fn main() {
     env_logger::init();
 
     let validator = |input: &str| {
@@ -57,14 +57,17 @@ fn main() {
         .with_validator(validator)
         .prompt()
         .unwrap();
-    let (start_port, end_port) = match port_parser(port_range_str){
+    let (start_port, end_port) = match port_parser(port_range_str) {
         Ok(ports) => ports,
-        Err(e) =>{
+        Err(e) => {
             warn!("Error while parsing port {:?}", e);
-            return
+            return;
         }
     };
     let mut scanner = create_scanner(&hostname, &proto, start_port, end_port);
-    scanner.scan();
-
+    info!(
+        "Starting scan on target {} over {}. Scanning ports: {}-{}",
+        hostname, proto, start_port, end_port
+    );
+    scanner.scan().await;
 }

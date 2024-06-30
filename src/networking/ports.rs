@@ -1,5 +1,5 @@
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct Port {
     pub value: u16,
     open: bool,
