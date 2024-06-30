@@ -1,15 +1,15 @@
+use std::io;
+
 // clippy
 use crate::networking::ports::Port;
-use crate::networking::ports::State;
-use crate::networking::tcp::tcp_connect;
-use crate::networking::tcp::ConnectionError;
-use crate::networking::tcp::ConnectonState;
-use crate::networking::tcp_async::tcp_connect_async;
-
-use log::debug;
-use log::info;
+use crate::networking::tcp::{tcp_connect, scan_ports};
+// use eyre;
+use log::{info, warn};
 use rand::seq::SliceRandom;
-use futures::future;
+/// This is a docstring
+/// ```rust
+/// print!("hello");
+/// ```
 pub struct Scanner<'t> {
     hostname: &'t str,
     proto: &'t str, // Not used yet because we don't have support for it
@@ -37,25 +37,21 @@ pub fn create_scanner<'t>(
     }
     scanner
 }
-fn target_responsive(hostname: &str, port: &Port) -> Result<bool, ConnectionError> {
-    let result = tcp_connect(hostname, port);
-    match result {
-        Err(ConnectionError::ConnectionTimeout()) => Err(ConnectionError::ConnectionTimeout()),
-        Err(_) => {
-            info!("Got connection error from target. Sure the target is alive?");
-            Ok(false)
+fn target_responsive(hostname: &str, proto: &str, port: &mut Port) -> bool {
+    let result = tcp_connect(hostname, proto, port);
+    match result{
+        Err(e) => {
+            warn!("Sure the target is up and running? Port scan returned with error: {}", e);
+            return false;
         }
-        Ok(_) => Ok(true),
+        Ok(_) => {
+            return true;
+        }
     }
 }
 pub trait Scan {
     fn target_alive(&mut self, inspected_ports: bool) -> bool;
-    async fn scan(&mut self);
-}
-
-trait Inspect {
-    fn inspect_ports(&mut self);
-    async fn inspect_ports_async(&mut self);
+    async fn scan(&mut self) -> eyre::Result<(), io::Error>; 
 }
 
 impl<'t> Scan for Scanner<'t> {
@@ -70,17 +66,13 @@ impl<'t> Scan for Scanner<'t> {
         let mut count = 0;
         if !inspected_ports {
             info!("Checking if target is alive with no prior inspected ports");
-            for port in self.ports.iter() {
+            for port in self.ports.iter_mut() {
                 if count >= 5 {
                     return false;
                 }
                 info!("scanning port: {}", port.value);
-                match target_responsive(&self.hostname, port) {
-                    Ok(v) => return v,
-                    Err(e) => {
-                        debug!("connection timed out {:?}", e);
-                        count += 1
-                    }
+                if target_responsive(&self.hostname, &self.proto, port) {
+                    return true;
                 }
             }
         }
@@ -89,18 +81,14 @@ impl<'t> Scan for Scanner<'t> {
             info!("Checking if target is alive with prior inspected ports");
             let mut ports = self.ports.to_vec();
             ports.shuffle(&mut rand::thread_rng());
-            for port in ports.iter() {
+            for port in ports.iter_mut() {
                 info!("scanning port: {}", port.value);
-                if ports.len() > 20 && count >= 20 {
+                if self.ports.len() > 20 && count >= 20 {
                     // Unlikely that the target is alive
                     return false;
                 }
-                match target_responsive(&self.hostname, port) {
-                    Ok(v) => return v,
-                    Err(e) => {
-                        debug!("connection timed out {:?}", e);
-                        count += 1
-                    }
+                if target_responsive(&self.hostname, &self.proto, port) {
+                    return true;
                 }
                 count += 1;
             }
@@ -108,93 +96,26 @@ impl<'t> Scan for Scanner<'t> {
 
         false
     }
-    async fn scan(&mut self) {
+    async fn scan(&mut self) -> eyre::Result<(), io::Error> {
         // here we gotta do some multithreading bs to scan ports in different segments
-        if !self.target_alive(false) {
-            info!(
-                "The target is not responding on provided ports. Are you sure the target is alive?"
-            );
-            return;
-        }
-        info!("target alive");
+        // if !self.target_alive(false) {
+        //     info!(
+        //         "The target is not responding on provided ports. Are you sure the target is alive?"
+        //     );
+        //     return Ok(())
+        // }
+        // info!("target alive");
         // Here we do multithreading
         // self.inspect_ports();
-        self.inspect_ports_async().await;
-    }
-}
-
-impl<'t> Inspect for Scanner<'t> {
-    fn inspect_ports(&mut self) {
-        let mut count = 0;
-        for port in self.ports.iter_mut() {
-            if !port.seen() {
-                port.see();
-                match tcp_connect(self.hostname, port) {
-                    Err(ConnectionError::ConnectionTimeout()) => {
-                        count += 1;
-                        if count >= 5 {
-                            info!("Connection timed out {} times on different ports. Sure the target is alive?", count);
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        panic!("Got connection error")
-                    }
-                    Ok(ok) => {
-                        match ok {
-                            ConnectonState::Open() => {
-                                port.open();
-                            }
-                            ConnectonState::Closed() => {
-                                port.closed();
-                            }
-                        };
-                        info!(
-                            "port:{}, proto:{}, state:{}",
-                            port.value,
-                            self.proto,
-                            port.state()
-                        );
-                        count = 0;
-                    }
-                };
-            }
-        }
-    }
-
-    async fn inspect_ports_async(&mut self) {
-        let mut futures = vec![];
-        let mut ports = Vec::<Port>::new();
-        for port in self.ports.iter_mut() {
-            if !port.seen() {
-                port.see();
-                let future = tokio::task::spawn(tcp_connect_async(self.hostname.into(), *port));
-                futures.push(future);
-            }
-        }
-
-        let results = future::join_all(futures).await;
-        for result in results {
-            match result{
-                Ok(r) => {
-                    match r{
-                        Err(_) => {},
-                        Ok(port) => {
-                            ports.push(port);
-                            info!(
-                                "port:{}, proto:{}, state:{}",
-                                port.value,
-                                self.proto,
-                                port.state()
-                            );
-                        }
-                    } 
-                },
-                Err(_) => {
-                    print!("error in future result wrapper");
-                },
-            };
-
+        match scan_ports(self.hostname.to_string(), self.proto.to_string(), self.ports.clone()).await{
+            Ok(ports) => {
+                self.ports = ports.clone();
+                return Ok(());
+            },
+            Err(e) => {
+                Err(e)
+            },
         }
     }
 }
+

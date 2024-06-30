@@ -2,9 +2,10 @@
 #[derive(Copy, Clone)]
 pub struct Port {
     pub value: u16,
-    open: bool,
-    seen: bool,
+    pub open: bool,
+    pub seen: bool,
 }
+// Perhaps not use setters instead just set the values directly like port.bajs = true;
 
 
 impl Into<u16> for Port {
@@ -35,10 +36,7 @@ impl From<&Port> for u16 {
 pub trait State {
     fn is_open(&self) -> bool;
     fn is_closed(&self) -> bool;
-    fn open(&mut self);
-    fn closed(&mut self);
-    fn seen(&self) -> bool;
-    fn see(&mut self);
+    fn is_seen(&self) -> bool;
     fn state(&self) -> String;
 }
 impl State for Port {
@@ -48,17 +46,8 @@ impl State for Port {
     fn is_closed(&self) -> bool {
         self.open == false
     }
-    fn open(&mut self) {
-        self.open = true;
-    }
-    fn closed(&mut self) {
-        self.open = false;
-    }
-    fn seen(&self) -> bool {
+    fn is_seen(&self) -> bool {
         self.seen
-    }
-    fn see(&mut self) {
-        self.seen = true
     }
     fn state(&self) -> String {
         match self.is_open(){

@@ -2,7 +2,7 @@ use std::vec;
 // use eyre;
 
 use inquire::{validator::Validation, Select, Text};
-use log::{info, warn};
+use log::{error, info, warn};
 use networking::ports::port_parser;
 use regex::Regex;
 use scanner::scanner::{create_scanner, Scan};
@@ -69,5 +69,12 @@ pub async fn main() {
         "Starting scan on target {} over {}. Scanning ports: {}-{}",
         hostname, proto, start_port, end_port
     );
-    scanner.scan().await;
+    match scanner.scan().await{
+        Ok(_) => {
+            info!("scan completed successfully")
+        }
+        Err(e) => {
+            error!("scan failed with error {}", e)
+        }
+    }
 }
