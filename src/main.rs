@@ -66,7 +66,7 @@ pub async fn main() {
             info!("scan finished successfully")
         },
         Err(e) =>{
-            error!("scan returned error: {}", e)
+            info!("Scan returned with error: {}.", e)
         }
     };
 
