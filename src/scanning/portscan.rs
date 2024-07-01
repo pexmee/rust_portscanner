@@ -108,9 +108,11 @@ pub async fn scan_target(
             }
             Ok(Err(e)) => {
                 info!("Are you sure the target is alive?");
+                token.cancel();
                 return Err(e);
             }
             Err(_) => {
+                token.cancel();
                 return Err(io::Error::new(io::ErrorKind::Other, "Task join error"));
             }
         }

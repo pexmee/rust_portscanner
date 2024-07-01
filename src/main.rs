@@ -59,6 +59,7 @@ pub async fn main() {
             return;
         }
     };
+    info!("Scanning target {} over {} on ports {}-{}", hostname, proto, start_port, end_port);
     let target = create_target(hostname, proto.into(), start_port, end_port);
     let mut port_map = HashMap::<u16, bool>::with_capacity(end_port.into());
     match scan_target(target, &mut port_map).await{
