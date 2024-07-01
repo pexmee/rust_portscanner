@@ -1,18 +1,13 @@
+use std::collections::HashMap;
 use std::vec;
 // use eyre;
 
 use inquire::{validator::Validation, Select, Text};
 use log::{error, info, warn};
-use networking::ports::port_parser;
+use scanning::portscan::{create_target, scan_target};
+use scanning::utils::port_parser;
 use regex::Regex;
-use scanner::scanner::{create_scanner, Scan};
-/*
-This should first be implemented as a TCP portscanner, and then with support to use UDP portscan.
-Main should only take the arguments from the user and pass them to the functions.
-inquire
-*/
-mod networking;
-mod scanner;
+mod scanning;
 #[tokio::main]
 pub async fn main() {
     env_logger::init();
@@ -64,17 +59,15 @@ pub async fn main() {
             return;
         }
     };
-    let mut scanner = create_scanner(&hostname, &proto, start_port, end_port);
-    info!(
-        "Starting scan on target {} over {}. Scanning ports: {}-{}",
-        hostname, proto, start_port, end_port
-    );
-    match scanner.scan().await{
-        Ok(_) => {
-            info!("scan completed successfully")
+    let target = create_target(hostname, proto.into(), start_port, end_port);
+    let mut port_map = HashMap::<u16, bool>::with_capacity(end_port.into());
+    match scan_target(target, &mut port_map).await{
+        Ok(_) =>{
+            info!("scan finished successfully")
+        },
+        Err(e) =>{
+            error!("scan returned error: {}", e)
         }
-        Err(e) => {
-            error!("scan failed with error {}", e)
-        }
-    }
+    };
+
 }
