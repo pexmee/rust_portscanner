@@ -1,12 +1,10 @@
 use ::tokio;
 use eyre;
 use futures::future;
-use log::{debug, error, info, warn};
+use log::{debug, info};
 use std::collections::HashMap;
-use std::net::TcpStream;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
-use std::{clone, io};
+use std::io;
 use tokio::net::TcpStream as TcpStreamAsync;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -32,26 +30,6 @@ pub fn create_target(hostname: String, proto: String, start_port: u16, end_port:
     }
 }
 
-/// TCP connect returning port and state or err
-pub fn inspect_port(hostname: String, port: u16) -> eyre::Result<(u16, bool), io::Error> {
-    let ip = hostname.parse::<Ipv4Addr>().unwrap();
-    let addr = SocketAddr::new(IpAddr::V4(ip), port.into());
-    let port_result = TcpStream::connect_timeout(&addr, Duration::new(0, 1_000_000_000));
-    match port_result {
-        Err(e) if ALLOWED_CON_ERRORS.contains(&e.kind()) => {
-            debug!("TCP port: {} state: CLOSED", port);
-            Ok((port, false))
-        }
-        Ok(_) => {
-            info!("TCP port: {} state: OPEN", port);
-            Ok((port, true))
-        }
-        Err(e) => {
-            warn!("Scanning TCP port: {} returned error: {}", port, e);
-            Err(e)
-        }
-    }
-}
 /// Asynchronous TCP connect returning port and state or err
 pub async fn inspect_port_async(
     hostname: String,
@@ -91,6 +69,11 @@ pub async fn scan_target(
 ) -> eyre::Result<&HashMap<u16, bool>, io::Error> {
     let token = CancellationToken::new();
     let mut futures = Vec::with_capacity(target.end_port.into());
+
+    info!(
+        "Scanning target {} over {} on ports {}-{}",
+        target.hostname, target.proto, target.start_port, target.end_port
+    );
     for port in target.start_port..target.end_port {
         let cloned_token = token.clone();
         let hostname = target.hostname.to_string();
