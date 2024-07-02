@@ -1,10 +1,9 @@
 use ::tokio;
 use eyre;
-use futures::future;
 use log::{debug, info};
-use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::Duration;
 use tokio::net::TcpStream as TcpStreamAsync;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -13,7 +12,7 @@ const ALLOWED_CON_ERRORS: &[io::ErrorKind] = &[
     io::ErrorKind::ConnectionAborted,
     io::ErrorKind::ConnectionReset,
 ];
-
+#[derive(Clone)]
 pub struct Target {
     hostname: String,
     proto: String, // Not used yet because we don't have support for it
@@ -39,6 +38,7 @@ pub async fn inspect_port_async(
     let ip = hostname.parse::<Ipv4Addr>().unwrap();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
     select! {
+
         port_result = TcpStreamAsync::connect(addr) => {
             match port_result {
                 Err(e) if ALLOWED_CON_ERRORS.contains(&e.kind()) => {
@@ -55,6 +55,7 @@ pub async fn inspect_port_async(
                     Err(e)
                 }
             }
+
         }
         _ = token.cancelled() => {
             debug!("token cancalled for port {}", port);
@@ -62,11 +63,12 @@ pub async fn inspect_port_async(
         }
     }
 }
-
+//TODO: Make a producer for the ports to scan that also sets PPS, and then the consumers read from that channel
 pub async fn scan_target(
     target: Target,
-    port_map: &mut HashMap<u16, bool>,
-) -> eyre::Result<&HashMap<u16, bool>, io::Error> {
+    ports_to_scan: &Vec<u16>,
+    duration: Duration,
+) -> eyre::Result<Vec<u16>, io::Error> {
     let token = CancellationToken::new();
     let mut futures = Vec::with_capacity(target.end_port.into());
 
@@ -74,7 +76,8 @@ pub async fn scan_target(
         "Scanning target {} over {} on ports {}-{}",
         target.hostname, target.proto, target.start_port, target.end_port
     );
-    for port in target.start_port..target.end_port {
+    // Only iterate over the closed ports, and map to the key
+    for &port in ports_to_scan.iter() {
         let cloned_token = token.clone();
         let hostname = target.hostname.to_string();
         let future =
@@ -83,11 +86,16 @@ pub async fn scan_target(
             );
         futures.push(future);
     }
+    let mut closed_ports = Vec::with_capacity(ports_to_scan.len());
 
-    for result in future::join_all(futures).await {
-        match result {
+    // We do not want to use join_all here because then we risk blasting the target too hard.
+    // Let this step occur sequentially to avoid that, and to sleep in-between.
+    for future in futures {
+        match future.await {
             Ok(Ok((port, open))) => {
-                port_map.entry(port).or_insert(open);
+                if !open {
+                    closed_ports.push(port);
+                }
             }
             Ok(Err(e)) => {
                 info!("Are you sure the target is alive?");
@@ -95,10 +103,12 @@ pub async fn scan_target(
                 return Err(e);
             }
             Err(_) => {
+                debug!("Task join error, cancelling token");
                 token.cancel();
                 return Err(io::Error::new(io::ErrorKind::Other, "Task join error"));
             }
         }
+        tokio::time::sleep(duration).await;
     }
-    Ok(port_map)
+    Ok(closed_ports)
 }

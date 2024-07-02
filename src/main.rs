@@ -1,13 +1,41 @@
-use std::collections::HashMap;
+use std::error::Error;
+use std::time::Duration;
 use std::vec;
+
 // use eyre;
 
 use inquire::{validator::Validation, Select, Text};
 use log::{info, warn};
-use scanning::portscan::{create_target, scan_target};
-use scanning::utils::port_parser;
 use regex::Regex;
+use scanning::portscan::{create_target, scan_target, Target};
+use scanning::utils::port_parser;
 mod scanning;
+
+pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), Box<dyn Error>> {
+    let mut ports_to_scan = Vec::from_iter(start_port..=end_port);
+    let durations = &[
+        Duration::new(0, 1_000),
+        Duration::new(0, 10_000),
+        Duration::new(0, 100_000),
+    ];
+    for duration in durations {
+        info!(
+            "Scanning with duration: {} microseconds",
+            duration.as_micros()
+        );
+
+        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, duration.clone()).await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                info!("Scan returned with error: {}.", e);
+                return Err(e.into());
+            }
+        };
+        info!("{} ports were closed and will be scanned again. Found {} open ports.", ports_to_scan.len(), (end_port-ports_to_scan.len() as u16))
+    }
+    Ok(())
+}
 #[tokio::main]
 pub async fn main() {
     env_logger::init();
@@ -60,14 +88,9 @@ pub async fn main() {
         }
     };
     let target = create_target(hostname, proto.into(), start_port, end_port);
-    let mut port_map = HashMap::<u16, bool>::with_capacity(end_port.into());
-    match scan_target(target, &mut port_map).await{
-        Ok(_) =>{
-            info!("scan finished successfully")
-        },
-        Err(e) =>{
-            info!("Scan returned with error: {}.", e)
-        }
-    };
-
+    if let Err(e) = run(target, start_port, end_port).await {
+        info!("scan stopped with error {}", e);
+        std::process::exit(1);
+    }
+    info!("Scan completed successfully.")
 }
