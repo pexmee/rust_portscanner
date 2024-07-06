@@ -602,6 +602,7 @@ dependencies = [
  "eyre",
  "futures",
  "inquire",
+ "lazy_static",
  "log",
  "ping",
  "rand",

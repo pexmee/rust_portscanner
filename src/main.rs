@@ -1,38 +1,50 @@
 use std::error::Error;
 use std::time::Duration;
 use std::vec;
-
-// use eyre;
-
+use std::collections::HashSet;
 use inquire::{validator::Validation, Select, Text};
 use log::{info, warn};
 use regex::Regex;
-use scanning::portscan::{create_target, scan_target, Target};
+use scanning::portscan::{create_target, scan_target, Target, scan_common_ports};
 use scanning::utils::port_parser;
+
 mod scanning;
 
+
+
+
 pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), Box<dyn Error>> {
-    let mut ports_to_scan = Vec::from_iter(start_port..=end_port);
+    let mut ports_to_scan = HashSet::from_iter(start_port..=end_port);
     let durations = &[
         Duration::new(0, 1_000),
         Duration::new(0, 10_000),
         Duration::new(0, 100_000),
     ];
+    ports_to_scan = match scan_common_ports(&target, &ports_to_scan, &durations[0].clone()).await{
+        Ok(p) => p,
+        Err(e) => {
+            return Err(e)
+        }
+    };
+    // Here we make sure we don't scan the already found ports.
     for duration in durations {
         info!(
             "Scanning with duration: {} microseconds",
             duration.as_micros()
         );
-
-        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, duration.clone()).await
-        {
+        
+        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, duration.clone()).await {
             Ok(p) => p,
             Err(e) => {
                 info!("Scan returned with error: {}.", e);
                 return Err(e.into());
             }
         };
-        info!("{} ports were closed and will be scanned again. Found {} open ports.", ports_to_scan.len(), (end_port-ports_to_scan.len() as u16))
+        info!(
+            "{} ports were closed and will be scanned again. Found {} open ports.",
+            ports_to_scan.len(),
+            (end_port - ports_to_scan.len() as u16)
+        )
     }
     Ok(())
 }
