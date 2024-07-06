@@ -30,7 +30,7 @@ pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), B
     for duration in durations {
         info!(
             "Scanning with {} probes per second",
-            1_000_000_000 / duration.as_micros() 
+            1_000_000_000 / duration.as_micros()
         );
 
         ports_to_scan = match scan_target(target.clone(), &ports_to_scan, *duration).await {

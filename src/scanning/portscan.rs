@@ -109,10 +109,9 @@ pub async fn scan_target(
     for &port in ports_to_scan.iter() {
         let cloned_token = token.clone();
         let hostname = target.hostname.to_string();
-        let future =
-            tokio::task::spawn(
-                async move { inspect_port_async(hostname, port, cloned_token, duration).await },
-            );
+        let future = tokio::task::spawn(async move {
+            inspect_port_async(hostname, port, cloned_token, duration).await
+        });
         futures.push(future);
     }
     let mut closed_ports = HashSet::with_capacity(ports_to_scan.len());
