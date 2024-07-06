@@ -60,6 +60,7 @@ pub async fn scan_common_ports(
         }
     };
     // Remove the ports we did find
+    // This logic seems broken tho. Try scanning port 78-85. Found 77 open ports top kek
     Ok(ports_to_scan - &(&common - &closed_ports))
 }
 
@@ -70,6 +71,11 @@ pub async fn inspect_port_async(
     token: CancellationToken,
     duration: Duration,
 ) -> eyre::Result<(u16, bool), io::Error> {
+    // TODO: Add timeout to connect
+    // TODO: Make it only re-scan ports that timed out. 
+    // If they were closed, consider them closed.
+    // 
+
     let ip = hostname.parse::<Ipv4Addr>().unwrap();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
     select! {
@@ -117,7 +123,7 @@ pub async fn scan_target(
     let mut closed_ports = HashSet::with_capacity(ports_to_scan.len());
 
     // We do not want to use join_all here because then we risk blasting the target too hard.
-    // Let this step occur sequentially to avoid that, and to sleep in-between.
+    // Let this step occur sequentially to avoid that. Each task will sleep anyway.
     for future in futures {
         match future.await {
             Ok(Ok((port, open))) => {
