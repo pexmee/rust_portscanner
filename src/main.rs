@@ -1,17 +1,14 @@
-use std::error::Error;
-use std::time::Duration;
-use std::vec;
-use std::collections::HashSet;
 use inquire::{validator::Validation, Select, Text};
 use log::{info, warn};
 use regex::Regex;
-use scanning::portscan::{create_target, scan_target, Target, scan_common_ports};
+use scanning::portscan::{create_target, scan_common_ports, scan_target, Target};
 use scanning::utils::port_parser;
+use std::collections::HashSet;
+use std::error::Error;
+use std::time::Duration;
+use std::vec;
 
 mod scanning;
-
-
-
 
 pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), Box<dyn Error>> {
     let mut ports_to_scan = HashSet::from_iter(start_port..=end_port);
@@ -20,11 +17,9 @@ pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), B
         Duration::new(0, 10_000),
         Duration::new(0, 100_000),
     ];
-    ports_to_scan = match scan_common_ports(&target, &ports_to_scan, &durations[0].clone()).await{
+    ports_to_scan = match scan_common_ports(&target, &ports_to_scan, &durations[0].clone()).await {
         Ok(p) => p,
-        Err(e) => {
-            return Err(e)
-        }
+        Err(e) => return Err(e),
     };
     // Here we make sure we don't scan the already found ports.
     for duration in durations {
@@ -32,7 +27,7 @@ pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), B
             "Scanning with duration: {} microseconds",
             duration.as_micros()
         );
-        
+
         ports_to_scan = match scan_target(target.clone(), &ports_to_scan, *duration).await {
             Ok(p) => p,
             Err(e) => {
@@ -79,12 +74,12 @@ pub async fn main() {
         if port_range_str.chars().count() > 11 {
             return Ok(Validation::Invalid(
                 "You're only allowed 11 characters.".into(),
-            ))
-        } 
+            ));
+        }
         if port_range_pattern.is_match(port_range_str) {
-            return Ok(Validation::Valid)
-        } 
-        
+            return Ok(Validation::Valid);
+        }
+
         if port_range_str.is_empty() {
             Ok(Validation::Valid)
         } else {
