@@ -79,11 +79,13 @@ pub async fn main() {
         if port_range_str.chars().count() > 11 {
             return Ok(Validation::Invalid(
                 "You're only allowed 11 characters.".into(),
-            ));
+            ))
         } 
         if port_range_pattern.is_match(port_range_str) {
-            Ok(Validation::Valid)
-        } else if port_range_str.is_empty() {
+            return Ok(Validation::Valid)
+        } 
+        
+        if port_range_str.is_empty() {
             Ok(Validation::Valid)
         } else {
             Ok(Validation::Invalid("Invalid port range.".into()))
