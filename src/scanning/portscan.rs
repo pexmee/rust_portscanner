@@ -37,16 +37,16 @@ pub struct Target {
 
 pub fn create_target(hostname: String, proto: String, start_port: u16, end_port: u16) -> Target {
     Target {
-        hostname: hostname,
-        proto: proto,
-        start_port: start_port,
-        end_port: end_port,
+        hostname,
+        proto,
+        start_port,
+        end_port,
     }
 }
 pub async fn scan_common_ports(target: &Target, ports_to_scan: &HashSet<u16>, duration: &Duration) -> Result<HashSet<u16>, Box<dyn Error>>{
     // We do not want to scan anything that isn't found in the user provided range
     let common: HashSet<u16> = ports_to_scan & &COMMON_TCP_PORTS;
-    let closed_ports = match scan_target(target.clone(), &common, duration.clone()).await {
+    let closed_ports = match scan_target(target.clone(), &common, *duration).await {
         Ok(p) => p,
         Err(e) => {
             info!("Common portscan returned with error: {}", e);

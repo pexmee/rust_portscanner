@@ -33,7 +33,7 @@ pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), B
             duration.as_micros()
         );
         
-        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, duration.clone()).await {
+        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, *duration).await {
             Ok(p) => p,
             Err(e) => {
                 info!("Scan returned with error: {}.", e);
@@ -77,10 +77,11 @@ pub async fn main() {
     let validator = |port_range_str: &str| {
         let port_range_pattern = Regex::new(r"\d+[-]\d+").unwrap();
         if port_range_str.chars().count() > 11 {
-            Ok(Validation::Invalid(
+            return Ok(Validation::Invalid(
                 "You're only allowed 11 characters.".into(),
-            ))
-        } else if port_range_pattern.is_match(port_range_str) {
+            ));
+        } 
+        if port_range_pattern.is_match(port_range_str) {
             Ok(Validation::Valid)
         } else if port_range_str.is_empty() {
             Ok(Validation::Valid)
