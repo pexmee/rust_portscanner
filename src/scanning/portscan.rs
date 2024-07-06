@@ -9,6 +9,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::net::TcpStream as TcpStreamAsync;
 use tokio::select;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 const ALLOWED_CON_ERRORS: &[io::ErrorKind] = &[
     io::ErrorKind::ConnectionRefused,
@@ -30,10 +31,10 @@ lazy_static! {
 }
 #[derive(Clone)]
 pub struct Target {
-    hostname: String,
-    proto: String, // Not used yet because we don't have support for it
-    start_port: u16,
-    end_port: u16,
+    pub hostname: String,
+    pub proto: String, // Not used yet because we don't have support for it
+    pub start_port: u16,
+    pub end_port: u16,
 }
 
 pub fn create_target(hostname: String, proto: String, start_port: u16, end_port: u16) -> Target {
@@ -59,7 +60,7 @@ pub async fn scan_common_ports(
         }
     };
     // Remove the ports we did find
-    Ok(ports_to_scan & &(&common - &closed_ports))
+    Ok(ports_to_scan - &(&common - &closed_ports))
 }
 
 /// Asynchronous TCP connect returning port and state or err
@@ -67,13 +68,13 @@ pub async fn inspect_port_async(
     hostname: String,
     port: u16,
     token: CancellationToken,
+    duration: Duration,
 ) -> eyre::Result<(u16, bool), io::Error> {
     let ip = hostname.parse::<Ipv4Addr>().unwrap();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
     select! {
-
-        port_result = TcpStreamAsync::connect(addr) => {
-            match port_result {
+        _ = sleep(duration) => {
+            match TcpStreamAsync::connect(addr).await {
                 Err(e) if ALLOWED_CON_ERRORS.contains(&e.kind()) => {
                     debug!("TCP port: {} state: CLOSED", port);
                     Ok((port, false))
@@ -88,7 +89,6 @@ pub async fn inspect_port_async(
                     Err(e)
                 }
             }
-
         }
         _ = token.cancelled() => {
             debug!("token cancalled for port {}", port);
@@ -105,17 +105,13 @@ pub async fn scan_target(
     let token = CancellationToken::new();
     let mut futures = Vec::with_capacity(target.end_port.into());
 
-    info!(
-        "Scanning target {} over {} on ports {}-{}",
-        target.hostname, target.proto, target.start_port, target.end_port
-    );
     // Only iterate over the closed ports, and map to the key
     for &port in ports_to_scan.iter() {
         let cloned_token = token.clone();
         let hostname = target.hostname.to_string();
         let future =
             tokio::task::spawn(
-                async move { inspect_port_async(hostname, port, cloned_token).await },
+                async move { inspect_port_async(hostname, port, cloned_token, duration).await },
             );
         futures.push(future);
     }
@@ -141,7 +137,6 @@ pub async fn scan_target(
                 return Err(io::Error::new(io::ErrorKind::Other, "Task join error"));
             }
         }
-        tokio::time::sleep(duration).await;
     }
     Ok(closed_ports)
 }

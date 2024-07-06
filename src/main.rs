@@ -13,10 +13,15 @@ mod scanning;
 pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), Box<dyn Error>> {
     let mut ports_to_scan = HashSet::from_iter(start_port..=end_port);
     let durations = &[
-        Duration::new(0, 1_000),
-        Duration::new(0, 10_000),
-        Duration::new(0, 100_000),
+        Duration::new(0, 25_000_000),
+        Duration::new(0, 50_000_000),
+        Duration::new(0, 100_000_000),
     ];
+    info!(
+        "Scanning target {} over {} on ports {}-{}",
+        target.hostname, target.proto, target.start_port, target.end_port
+    );
+    info!("Starting scan for common ports");
     ports_to_scan = match scan_common_ports(&target, &ports_to_scan, &durations[0].clone()).await {
         Ok(p) => p,
         Err(e) => return Err(e),
@@ -24,8 +29,8 @@ pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), B
     // Here we make sure we don't scan the already found ports.
     for duration in durations {
         info!(
-            "Scanning with duration: {} microseconds",
-            duration.as_micros()
+            "Scanning with {} probes per second",
+            1_000_000_000 / duration.as_micros() 
         );
 
         ports_to_scan = match scan_target(target.clone(), &ports_to_scan, *duration).await {
