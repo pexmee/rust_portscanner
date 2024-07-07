@@ -1,53 +1,13 @@
 use inquire::{validator::Validation, Select, Text};
 use log::{info, warn};
 use regex::Regex;
-use scanning::portscan::{create_target, scan_common_ports, scan_target, Target};
+use scanning::portscan::create_target;
+use scanning::runner::run;
 use scanning::utils::port_parser;
-use std::collections::HashSet;
-use std::error::Error;
-use std::time::Duration;
 use std::vec;
 
 mod scanning;
 
-pub async fn run(target: Target, start_port: u16, end_port: u16) -> Result<(), Box<dyn Error>> {
-    let mut ports_to_scan = HashSet::from_iter(start_port..=end_port);
-    let durations = &[
-        Duration::new(0, 25_000_000),
-        Duration::new(0, 50_000_000),
-        Duration::new(0, 100_000_000),
-    ];
-    info!(
-        "Scanning target {} over {} on ports {}-{}",
-        target.hostname, target.proto, target.start_port, target.end_port
-    );
-    info!("Starting scan for common ports");
-    ports_to_scan = match scan_common_ports(&target, &ports_to_scan, &durations[0].clone()).await {
-        Ok(p) => p,
-        Err(e) => return Err(e),
-    };
-    // Here we make sure we don't scan the already found ports.
-    for duration in durations {
-        info!(
-            "Scanning with {} probes per second",
-            1_000_000_000 / duration.as_micros()
-        );
-
-        ports_to_scan = match scan_target(target.clone(), &ports_to_scan, *duration).await {
-            Ok(p) => p,
-            Err(e) => {
-                info!("Scan returned with error: {}.", e);
-                return Err(e.into());
-            }
-        };
-        info!(
-            "{} ports were closed and will be scanned again. Found {} open ports.",
-            ports_to_scan.len(),
-            (end_port - ports_to_scan.len() as u16)
-        )
-    }
-    Ok(())
-}
 #[tokio::main]
 pub async fn main() {
     env_logger::init();
@@ -103,8 +63,9 @@ pub async fn main() {
         }
     };
     let target = create_target(hostname, proto.into(), start_port, end_port);
-    if let Err(e) = run(target, start_port, end_port).await {
+    if let Err(e) = run(target).await {
         info!("scan stopped with error {}", e);
+        info!("Are you sure the target is alive and reachable?");
         std::process::exit(1);
     }
     info!("Scan completed successfully.")

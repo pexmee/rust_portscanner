@@ -1,4 +1,3 @@
-use ::tokio;
 use eyre;
 use lazy_static::lazy_static;
 use log::{debug, info};
@@ -9,7 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use tokio::net::TcpStream as TcpStreamAsync;
 use tokio::select;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 const ALLOWED_CON_ERRORS: &[io::ErrorKind] = &[
     io::ErrorKind::ConnectionRefused,
@@ -29,6 +28,12 @@ lazy_static! {
         49157,
     ]);
 }
+
+pub enum State {
+    Unknown,
+    Open,
+    Closed,
+}
 #[derive(Clone)]
 pub struct Target {
     pub hostname: String,
@@ -45,55 +50,40 @@ pub fn create_target(hostname: String, proto: String, start_port: u16, end_port:
         end_port,
     }
 }
-pub async fn scan_common_ports(
-    target: &Target,
-    ports_to_scan: &HashSet<u16>,
-    duration: &Duration,
-) -> Result<HashSet<u16>, Box<dyn Error>> {
-    // We do not want to scan anything that isn't found in the user provided range
-    let common: HashSet<u16> = ports_to_scan & &COMMON_TCP_PORTS;
-    let closed_ports = match scan_target(target.clone(), &common, *duration).await {
-        Ok(p) => p,
-        Err(e) => {
-            info!("Common portscan returned with error: {}", e);
-            return Err(e.into());
-        }
-    };
-    // Remove the ports we did find
-    // This logic seems broken tho. Try scanning port 78-85. Found 77 open ports top kek
-    Ok(ports_to_scan - &(&common - &closed_ports))
-}
 
 /// Asynchronous TCP connect returning port and state or err
-pub async fn inspect_port_async(
+pub async fn inspect_port(
     hostname: String,
     port: u16,
     token: CancellationToken,
     duration: Duration,
-) -> eyre::Result<(u16, bool), io::Error> {
-    // TODO: Add timeout to connect
-    // TODO: Make it only re-scan ports that timed out. 
-    // If they were closed, consider them closed.
-    // 
-
+    timeout_duration: Duration,
+) -> eyre::Result<(u16, State), io::Error> {
     let ip = hostname.parse::<Ipv4Addr>().unwrap();
     let addr = SocketAddr::new(IpAddr::V4(ip), port);
     select! {
         _ = sleep(duration) => {
-            match TcpStreamAsync::connect(addr).await {
-                Err(e) if ALLOWED_CON_ERRORS.contains(&e.kind()) => {
-                    debug!("TCP port: {} state: CLOSED", port);
-                    Ok((port, false))
+            match timeout(timeout_duration, TcpStreamAsync::connect(addr)).await {
+                Ok(result) => {
+                    match result{
+                        Err(e) if ALLOWED_CON_ERRORS.contains(&e.kind()) => {
+                            Ok((port, State::Closed))
+                        }
+                        Ok(_) => {
+                            Ok((port, State::Open))
+                        }
+                        Err(e) => {
+                            token.cancel();
+                            Err(e)
+                        }
+                    }
+                },
+
+                // If we timed out we just set the state to unknown so we can scan it again.
+                Err(_) => {
+                    Ok((port, State::Unknown))
                 }
-                Ok(_) => {
-                    info!("TCP port: {} state: OPEN", port);
-                    Ok((port, true))
-                }
-                Err(e) => {
-                    debug!("Scanning TCP port: {} returned error: {}.", port, e);
-                    token.cancel();
-                    Err(e)
-                }
+
             }
         }
         _ = token.cancelled() => {
@@ -102,11 +92,43 @@ pub async fn inspect_port_async(
         }
     }
 }
-//TODO: Make a producer for the ports to scan that also sets PPS, and then the consumers read from that channel
-pub async fn scan_target(
+pub async fn scan_common_tcp_ports(
+    target: &Target,
+    ports_to_scan: &HashSet<u16>,
+    sleep_duration: Duration,
+    timeout_duration: Duration,
+) -> Result<HashSet<u16>, Box<dyn Error>> {
+    // We do not want to scan anything that isn't found in the user provided range
+    let common: HashSet<u16> = ports_to_scan & &COMMON_TCP_PORTS;
+    let unknown_ports = match scan_ports_for_target(
+        target.clone(),
+        &common,
+        sleep_duration,
+        timeout_duration,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(e.into());
+        }
+    };
+    // Remove the ports we did find.
+    // Set A = ports in ports_to_scan excluding ports in common
+    // Set B = unknown ports
+    // Return UNION(A,B) i.e all ports except the ones that are not unknown anymore
+    Ok(&(ports_to_scan - &common) | &unknown_ports)
+}
+
+// WONT DO:: 'Make a producer for the ports to scan that also sets PPS, and then the consumers read from that channel'
+// This is because the tokio library has broadcast channels and multiple producer and consumer channels, but
+// The broadcast channels do not guarantee that only one receiver will get each message. Several receivers can get
+// The same message.
+pub async fn scan_ports_for_target(
     target: Target,
     ports_to_scan: &HashSet<u16>,
     duration: Duration,
+    timeout_duration: Duration,
 ) -> eyre::Result<HashSet<u16>, io::Error> {
     let token = CancellationToken::new();
     let mut futures = Vec::with_capacity(target.end_port.into());
@@ -116,23 +138,30 @@ pub async fn scan_target(
         let cloned_token = token.clone();
         let hostname = target.hostname.to_string();
         let future = tokio::task::spawn(async move {
-            inspect_port_async(hostname, port, cloned_token, duration).await
+            inspect_port(hostname, port, cloned_token, duration, timeout_duration).await
         });
         futures.push(future);
     }
-    let mut closed_ports = HashSet::with_capacity(ports_to_scan.len());
+    let mut unknown_ports = HashSet::with_capacity(ports_to_scan.len());
 
     // We do not want to use join_all here because then we risk blasting the target too hard.
     // Let this step occur sequentially to avoid that. Each task will sleep anyway.
     for future in futures {
         match future.await {
-            Ok(Ok((port, open))) => {
-                if !open {
-                    closed_ports.insert(port);
+            Ok(Ok((port, state))) => match state {
+                State::Open => {
+                    info!("{} port {} is state: OPEN", target.proto, port);
                 }
-            }
+                State::Closed => {
+                    debug!("{} port {} is state: CLOSED", target.proto, port);
+                }
+                State::Unknown => {
+                    debug!("{} port {} is state: UNKNOWN", target.proto, port);
+                    unknown_ports.insert(port);
+                }
+            },
             Ok(Err(e)) => {
-                info!("Are you sure the target is alive?");
+                debug!("Future raised an error {}", e);
                 token.cancel();
                 return Err(e);
             }
@@ -143,5 +172,5 @@ pub async fn scan_target(
             }
         }
     }
-    Ok(closed_ports)
+    Ok(unknown_ports)
 }
