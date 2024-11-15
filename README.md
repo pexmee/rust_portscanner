@@ -1,2 +1,2 @@
-# rust_portscanner
-A portscanner written in Rust
+# TCP Rust Portscanner
+A TCP portscanner written in Rust. 
